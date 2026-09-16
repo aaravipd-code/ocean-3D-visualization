@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AquaCore — Model vs Observation</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700;800&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="shared.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+<style>
+  body{background:var(--paper);}
+
+  .page-head{background:var(--deep);color:#fff;padding:52px 0 60px;}
+  .page-head .eyebrow{color:var(--teal);font-family:var(--mono);font-size:11.5px;letter-spacing:1.2px;text-transform:uppercase;display:block;margin-bottom:10px;}
+  .page-head h1{color:#fff;font-size:32px;margin-bottom:10px;}
+  .page-head p{color:rgba(255,255,255,0.65);font-size:15px;max-width:520px;}
+
+  .controls-bar{
+    background:#fff;border:1px solid var(--line);border-radius:12px;
+    padding:16px 20px;display:flex;align-items:center;gap:22px;flex-wrap:wrap;
+    margin-top:-30px;position:relative;z-index:5;box-shadow:0 20px 40px -28px rgba(6,26,44,0.35);
+  }
+  .control-group{display:flex;flex-direction:column;gap:6px;}
+  .control-group label{font-size:11px;color:var(--ink-dim);letter-spacing:.4px;text-transform:uppercase;font-weight:600;}
+  .control-group select{
+    border:1px solid var(--line);border-radius:7px;padding:9px 12px;font-family:var(--sans);
+    font-size:13.5px;color:var(--ink);background:var(--paper);min-width:200px;
+  }
+  .var-tabs{display:flex;gap:6px;}
+  .var-tab{
+    padding:9px 15px;border-radius:7px;border:1px solid var(--line);background:var(--paper);
+    font-size:13px;font-weight:600;color:var(--ink-dim);cursor:pointer;
+  }
+  .var-tab.active{background:var(--navy);border-color:var(--navy);color:#fff;}
+
+  .live-pill{
+    display:inline-flex;align-items:center;gap:7px;
+    font-size:12px;font-weight:600;padding:9px 14px;border-radius:999px;cursor:pointer;
+    border:1px solid var(--line);color:var(--ink-dim);font-family:var(--mono);white-space:nowrap;
+  }
+  .live-pill .live-dot{width:7px;height:7px;border-radius:50%;background:var(--ink-dim);flex-shrink:0;}
+  .live-pill.idle:hover{border-color:var(--navy);color:var(--navy);}
+  .live-pill.loading .live-dot{background:#f5a623;animation:pulse 1s ease-in-out infinite;}
+  .live-pill.loading{color:#c07f0f;border-color:rgba(245,166,35,0.4);background:#fff8ec;}
+  .live-pill.live .live-dot{background:#16a34a;box-shadow:0 0 6px #16a34a;}
+  .live-pill.live{color:#15803d;border-color:rgba(22,163,74,0.35);background:#f0fdf4;}
+  .live-pill.error .live-dot{background:#dc2626;}
+  .live-pill.error{color:#b91c1c;border-color:rgba(220,38,38,0.35);background:#fef2f2;}
+  @keyframes pulse{0%,100%{opacity:1;}50%{opacity:0.35;}}
+  .live-tag{
+    font-family:var(--mono);font-size:9.5px;font-weight:700;letter-spacing:.3px;
+    padding:1px 6px;border-radius:4px;margin-left:7px;vertical-align:middle;
+  }
+  .live-tag.on{background:#f0fdf4;color:#15803d;}
+  .live-tag.off{background:var(--mist);color:var(--ink-dim);}
+
+  .content{padding:56px 0 80px;}
+
+  .stat-cards{display:grid;grid-template-columns:repeat(3,1fr);gap:20px;margin-bottom:36px;}
+  .stat-card{
+    background:#fff;border:1px solid var(--line);border-radius:12px;padding:24px;
+  }
+  .stat-card .k{font-size:12px;color:var(--ink-dim);margin-bottom:10px;letter-spacing:.3px;}
+  .stat-card .v{font-family:var(--head);font-size:30px;color:var(--navy);font-weight:700;}
+  .stat-card .v span{font-size:15px;font-weight:500;color:var(--ink-dim);}
+  .stat-card.model .v{color:#0891b2;}
+  .stat-card.obs .v{color:#f5a623;}
+  .stat-card.diff .v{color:#dc2626;}
+  .stat-card.diff.good .v{color:#16a34a;}
+
+  .chart-card{
+    background:#fff;border:1px solid var(--line);border-radius:14px;padding:28px;margin-bottom:40px;
+  }
+  .chart-card h3{font-size:17px;margin-bottom:4px;}
+  .chart-card p{font-size:13px;color:var(--ink-dim);margin:0 0 20px;}
+  .chart-legend{display:flex;gap:20px;margin-bottom:16px;}
+  .chart-legend span{font-size:12.5px;color:var(--ink-dim);display:flex;align-items:center;gap:7px;}
+  .chart-legend .sw{width:16px;height:3px;border-radius:2px;}
+
+  .fleet-head{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:16px;flex-wrap:wrap;gap:10px;}
+  .fleet-head h3{font-size:19px;}
+  .fleet-head .sub{font-size:13px;color:var(--ink-dim);}
+  .table-card{background:#fff;border:1px solid var(--line);border-radius:14px;overflow:hidden;}
+  table{width:100%;border-collapse:collapse;font-size:13px;}
+  thead th{
+    text-align:left;padding:13px 18px;background:var(--mist);color:var(--ink-dim);
+    font-size:11px;letter-spacing:.5px;text-transform:uppercase;font-weight:600;
+  }
+  tbody td{padding:12px 18px;border-top:1px solid var(--line);}
+  tbody tr:hover{background:var(--mist);cursor:pointer;}
+  tbody tr.selected{background:var(--teal-glow);}
+  .id-cell{font-family:var(--mono);font-weight:600;color:var(--navy);}
+  .diff-pos{color:#dc2626;font-family:var(--mono);}
+  .diff-neg{color:#16a34a;font-family:var(--mono);}
+  .region-pill{
+    font-size:11px;background:var(--mist);color:var(--ink-dim);padding:3px 9px;border-radius:999px;
+  }
+
+  .impact-note{
+    background:var(--navy);color:#fff;border-radius:14px;padding:28px 30px;margin-top:40px;
+    display:flex;align-items:center;gap:20px;
+  }
+  .impact-note svg{flex-shrink:0;color:var(--teal);}
+  .impact-note p{margin:0;font-size:14.5px;color:rgba(255,255,255,0.82);line-height:1.6;}
+  .impact-note strong{color:#fff;}
+
+  @media (max-width:900px){
+    .stat-cards{grid-template-columns:1fr;}
+    .controls-bar{flex-direction:column;align-items:stretch;}
+  }
+</style>
+</head>
+<body>
+
+<nav class="ac-nav">
+  <div class="wrap">
+    <a href="index.html" class="ac-logo">
+      <span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M2 15c2 2 4 2 6 0s4-2 6 0 4 2 6 0 4-2 6 0" stroke="#061a2c" stroke-width="2" stroke-linecap="round"/></svg></span>
+      <span class="word">AquaCore</span>
+    </a>
+    <div class="ac-links">
+      <a href="index.html">Home</a>
+      <a href="dashboard.html">Dashboard</a>
+      <a href="comparison.html" class="active">Comparison</a>
+    </div>
+    <a href="dashboard.html" class="ac-cta ghost">← Back to Globe</a>
+  </div>
+</nav>
+
+<div class="page-head">
+  <div class="wrap">
+    <span class="eyebrow">Analytics</span>
+    <h1>Model vs Observation</h1>
+    <p>Researchers can directly compare model predictions with real measurements — station by station, or across the whole fleet.</p>
+  </div>
+</div>
+
+<div class="wrap">
+  <div class="controls-bar">
+    <div class="control-group">
+      <label>Station</label>
+      <select id="stationSelect"></select>
+    </div>
+    <div class="control-group">
+      <label>Variable</label>
+      <div class="var-tabs" id="varTabs"></div>
+    </div>
+    <div class="control-group">
+      <label>Depth</label>
+      <select id="depthDisplay" disabled></select>
+    </div>
+    <div class="control-group" style="margin-left:auto;">
+      <label>Data Source</label>
+      <span id="liveStatus" class="live-pill idle" title="Click to fetch live ocean data">
+        <span class="live-dot"></span><span id="liveStatusText">Fetch Live Data</span>
+      </span>
+    </div>
+  </div>
+</div>
+
+<div class="content">
+  <div class="wrap">
+
+    <div class="stat-cards">
+      <div class="stat-card model">
+        <div class="k">Model Value</div>
+        <div class="v" id="cardModel">–</div>
+      </div>
+      <div class="stat-card obs">
+        <div class="k">Observation <span class="live-tag off" id="obsLiveTag">SIM</span></div>
+        <div class="v" id="cardObs">–</div>
+      </div>
+      <div class="stat-card diff" id="cardDiffWrap">
+        <div class="k">Difference</div>
+        <div class="v" id="cardDiff">–</div>
+      </div>
+    </div>
+
+    <div class="chart-card">
+      <h3 id="chartTitle">Temperature Comparison — ARGO-100</h3>
+      <p>Model output vs. observed reading across 8 days at this station's depth.</p>
+      <div class="chart-legend">
+        <span><span class="sw" style="background:#0891b2;"></span>Model</span>
+        <span><span class="sw" style="background:#f5a623;"></span>Observation</span>
+        <span style="color:var(--ink-dim);font-style:italic;">Day 1 uses live data when available; Days 2–8 are simulated forecast</span>
+      </div>
+      <canvas id="compareChart" height="90"></canvas>
+    </div>
+
+    <div class="fleet-head">
+      <div>
+        <h3>Fleet Overview — all stations</h3>
+        <span class="sub" id="fleetSub">Across 18 stations · current day &amp; variable</span>
+      </div>
+    </div>
+    <div class="table-card">
+      <table>
+        <thead>
+          <tr><th>Station</th><th>Region</th><th>Depth</th><th>Model</th><th>Observed</th><th>Difference</th></tr>
+        </thead>
+        <tbody id="stationTable"></tbody>
+      </table>
+    </div>
+
+    <div class="impact-note">
+      <svg width="30" height="30" viewBox="0 0 24 24" fill="none"><path d="M12 2l3 6 7 1-5 5 1 7-6-3-6 3 1-7-5-5 7-1z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>
+      <p><strong>Why this matters:</strong> a fleet-wide RMSE close to zero means the model is tracking real ocean conditions well; a growing bias in one region flags exactly where the model — or the sensor network — needs attention.</p>
+    </div>
+
+  </div>
+</div>
+
+<script src="data.js"></script>
+<script>
+(function(){
+  const params = new URLSearchParams(window.location.search);
+  const reqStation = params.get('station');
+
+  const state = {
+    variable: 'temperature',
+    station: STATIONS.find(s=>s.id===reqStation) || STATIONS.find(s=>s.id==='ARGO-100') || STATIONS[0]
+  };
+
+  // ---- station dropdown ----
+  const stationSelect = document.getElementById('stationSelect');
+  STATIONS.forEach(s=>{
+    const opt = document.createElement('option');
+    opt.value = s.id; opt.textContent = `${s.id} — ${s.name}`;
+    if (s.id===state.station.id) opt.selected = true;
+    stationSelect.appendChild(opt);
+  });
+  stationSelect.addEventListener('change', ()=>{
+    state.station = STATIONS.find(s=>s.id===stationSelect.value);
+    updateAll();
+  });
+
+  // ---- variable tabs ----
+  const varTabs = document.getElementById('varTabs');
+  Object.keys(VARIABLES).forEach(key=>{
+    const btn = document.createElement('button');
+    btn.className = 'var-tab' + (key===state.variable?' active':'');
+    btn.textContent = VARIABLES[key].label;
+    btn.addEventListener('click', ()=>{
+      state.variable = key;
+      [...varTabs.children].forEach(b=>b.classList.remove('active'));
+      btn.classList.add('active');
+      updateAll();
+    });
+    varTabs.appendChild(btn);
+  });
+
+  document.getElementById('depthDisplay').innerHTML = `<option>fixed by station</option>`;
+
+  // ---- chart setup ----
+  const ctx = document.getElementById('compareChart').getContext('2d');
+  let chart = null;
+  function buildSeries(){
+    const days = [], modelArr = [], obsArr = [];
+    for (let t=0;t<N_DAYS;t++){
+      const { model, observed } = stationValue(state.station, state.variable, t);
+      days.push('Day '+(t+1)); modelArr.push(model); obsArr.push(observed);
+    }
+    return { days, modelArr, obsArr };
+  }
+  function renderChart(){
+    const { days, modelArr, obsArr } = buildSeries();
+    if (chart) chart.destroy();
+    chart = new Chart(ctx, {
+      type:'line',
+      data:{
+        labels:days,
+        datasets:[
+          { label:'Model', data:modelArr, borderColor:'#0891b2', backgroundColor:'rgba(8,145,178,0.08)', tension:0.35, fill:true, pointRadius:3 },
+          { label:'Observation', data:obsArr, borderColor:'#f5a623', backgroundColor:'rgba(245,166,35,0.08)', tension:0.35, fill:true, pointRadius:3, borderDash:[4,3] }
+        ]
+      },
+      options:{
+        plugins:{ legend:{ display:false } },
+        scales:{
+          y:{ grid:{ color:'#eef2f1' }, ticks:{ color:'#5c7285', font:{ family:'Inter', size:11 } } },
+          x:{ grid:{ display:false }, ticks:{ color:'#5c7285', font:{ family:'Inter', size:11 } } }
+        }
+      }
+    });
+  }
+
+  // ---- fleet table ----
+  function renderTable(){
+    const tbody = document.getElementById('stationTable');
+    const v = VARIABLES[state.variable];
+    const rows = STATIONS.map(s=>{
+      const { model, observed, difference, isLive } = stationValue(s, state.variable, 0);
+      return { s, model, observed, difference, isLive };
+    });
+    tbody.innerHTML = rows.map(r=>`
+      <tr class="${r.s.id===state.station.id?'selected':''}" data-id="${r.s.id}">
+        <td class="id-cell">${r.s.id}</td>
+        <td><span class="region-pill">${r.s.name}</span></td>
+        <td>${r.s.depth} m</td>
+        <td>${r.model.toFixed(2)} ${v.unit}</td>
+        <td>${r.observed.toFixed(2)} ${v.unit} <span class="live-tag ${r.isLive?'on':'off'}">${r.isLive?'LIVE':'SIM'}</span></td>
+        <td class="${r.difference>=0?'diff-pos':'diff-neg'}">${r.difference>=0?'+':''}${r.difference.toFixed(2)}</td>
+      </tr>
+    `).join('');
+    [...tbody.querySelectorAll('tr')].forEach(row=>{
+      row.addEventListener('click', ()=>{
+        state.station = STATIONS.find(s=>s.id===row.dataset.id);
+        stationSelect.value = state.station.id;
+        updateAll();
+      });
+    });
+  }
+
+  function updateAll(){
+    const v = VARIABLES[state.variable];
+    const { model, observed, difference, isLive } = stationValue(state.station, state.variable, 0);
+    document.getElementById('cardModel').innerHTML = `${model.toFixed(1)}<span> ${v.unit}</span>`;
+    document.getElementById('cardObs').innerHTML = `${observed.toFixed(1)}<span> ${v.unit}</span>`;
+    document.getElementById('cardDiff').innerHTML = `${difference>=0?'+':''}${difference.toFixed(2)}<span> ${v.unit}</span>`;
+    document.getElementById('cardDiffWrap').classList.toggle('good', Math.abs(difference) < (v.range.max-v.range.min)*0.03);
+    const obsTag = document.getElementById('obsLiveTag');
+    obsTag.textContent = isLive ? 'LIVE' : 'SIM';
+    obsTag.className = 'live-tag ' + (isLive ? 'on' : 'off');
+    document.getElementById('chartTitle').textContent = `${v.label} Comparison — ${state.station.id}`;
+    document.getElementById('depthDisplay').innerHTML = `<option>${state.station.depth} m (station depth)</option>`;
+    document.getElementById('fleetSub').textContent = `Across ${STATIONS.length} stations · ${v.label} · Day 1`;
+    renderChart();
+    renderTable();
+  }
+
+  updateAll();
+
+  /* ---- live data fetch + status pill ---- */
+  const livePill = document.getElementById('liveStatus');
+  const livePillText = document.getElementById('liveStatusText');
+  function renderLiveStatus(){
+    livePill.className = 'live-pill ' + LIVE.status;
+    if (LIVE.status === 'idle') livePillText.textContent = 'Fetch Live Data';
+    else if (LIVE.status === 'loading') livePillText.textContent = 'Fetching…';
+    else if (LIVE.status === 'live'){
+      const secs = Math.round((Date.now()-LIVE.lastFetched)/1000);
+      livePillText.textContent = `Live · ${LIVE.matched}/${STATIONS.length} · ${secs}s ago`;
+    } else if (LIVE.status === 'error'){
+      livePillText.textContent = 'Unavailable — retry';
+    }
+  }
+  async function runFetch(){
+    renderLiveStatus();
+    try{ await fetchLiveData(); } catch(e){ console.warn('AquaCore: live fetch failed', e); }
+    renderLiveStatus();
+    updateAll();
+  }
+  livePill.addEventListener('click', ()=>{ if (LIVE.status!=='loading') runFetch(); });
+  runFetch();
+})();
+</script>
+</body>
+</html>

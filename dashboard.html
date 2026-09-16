@@ -1,0 +1,755 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AquaCore Dashboard — 3D Ocean Globe</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700;800&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="shared.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<style>
+  html,body{height:100%;overflow:hidden;background:var(--deep);}
+  .dash{display:flex;flex-direction:column;height:100vh;}
+
+  /* ---------- top bar ---------- */
+  .dash-top{
+    display:flex;align-items:center;justify-content:space-between;
+    padding:12px 20px;background:#0a2338;border-bottom:1px solid rgba(255,255,255,0.08);
+    flex-shrink:0;z-index:20;
+  }
+  .dash-title{display:flex;align-items:center;gap:12px;}
+  .dash-title .mark{
+    width:28px;height:28px;border-radius:8px;background:linear-gradient(135deg,var(--teal),var(--teal-dark));
+    display:flex;align-items:center;justify-content:center;
+  }
+  .dash-title h1{font-family:var(--head);font-size:15px;color:#fff;font-weight:700;}
+  .dash-title span{font-size:11px;color:rgba(255,255,255,0.4);}
+  .dash-nav{display:flex;gap:10px;align-items:center;}
+  .dash-nav a{
+    font-size:12.5px;color:rgba(255,255,255,0.65);padding:7px 13px;border-radius:6px;
+  }
+  .dash-nav a:hover{color:#fff;background:rgba(255,255,255,0.06);}
+  .dash-nav a.primary{background:var(--teal);color:var(--deep);font-weight:700;}
+  .dash-nav a.primary:hover{background:#3fdbd6;}
+  .live-pill{
+    display:flex;align-items:center;gap:7px;
+    font-size:12px;font-weight:600;padding:7px 13px;border-radius:999px;cursor:pointer;
+    border:1px solid rgba(255,255,255,0.15);color:rgba(255,255,255,0.7);
+    font-family:var(--mono);
+  }
+  .live-pill .live-dot{width:7px;height:7px;border-radius:50%;background:rgba(255,255,255,0.4);flex-shrink:0;}
+  .live-pill.idle:hover{border-color:rgba(255,255,255,0.35);color:#fff;}
+  .live-pill.loading .live-dot{background:#f5a623;animation:pulse 1s ease-in-out infinite;}
+  .live-pill.loading{color:#f5a623;border-color:rgba(245,166,35,0.4);}
+  .live-pill.live .live-dot{background:#22d3aa;box-shadow:0 0 6px #22d3aa;}
+  .live-pill.live{color:#22d3aa;border-color:rgba(34,211,170,0.4);background:rgba(34,211,170,0.08);}
+  .live-pill.error .live-dot{background:#f87171;}
+  .live-pill.error{color:#f87171;border-color:rgba(248,113,113,0.4);}
+  @keyframes pulse{0%,100%{opacity:1;}50%{opacity:0.35;}}
+  .live-tag{
+    font-family:var(--mono);font-size:9.5px;font-weight:700;letter-spacing:.3px;
+    padding:1px 6px;border-radius:4px;margin-left:7px;vertical-align:middle;
+  }
+  .live-tag.on{background:rgba(34,211,170,0.15);color:#22d3aa;}
+  .live-tag.off{background:rgba(255,255,255,0.08);color:rgba(255,255,255,0.4);}
+
+  /* ---------- main 3-col layout ---------- */
+  .dash-main{flex:1;display:grid;grid-template-columns:216px 1fr 260px;min-height:0;}
+  .panel-col{
+    background:#0a2338;border-right:1px solid rgba(255,255,255,0.08);
+    padding:16px;overflow-y:auto;
+  }
+  .panel-col.right{border-right:none;border-left:1px solid rgba(255,255,255,0.08);}
+  .panel-title{
+    font-size:11px;letter-spacing:1px;text-transform:uppercase;color:rgba(255,255,255,0.4);
+    margin-bottom:14px;font-weight:600;
+  }
+
+  /* layer toggle rows */
+  .layer-row{
+    display:flex;align-items:center;justify-content:space-between;
+    padding:10px 10px;border-radius:8px;margin-bottom:4px;cursor:pointer;
+    border:1px solid transparent;
+  }
+  .layer-row:hover{background:rgba(255,255,255,0.04);}
+  .layer-row.active{background:rgba(23,201,196,0.12);border-color:rgba(23,201,196,0.35);}
+  .layer-row .lbl{display:flex;align-items:center;gap:9px;font-size:13px;color:rgba(255,255,255,0.82);}
+  .layer-row .dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;}
+  .layer-row .sw{
+    width:30px;height:17px;border-radius:999px;background:rgba(255,255,255,0.1);position:relative;flex-shrink:0;
+  }
+  .layer-row .sw .k{
+    position:absolute;top:2px;left:2px;width:13px;height:13px;border-radius:50%;background:rgba(255,255,255,0.5);
+    transition:transform .15s ease, background .15s ease;
+  }
+  .layer-row.active .sw{background:rgba(23,201,196,0.35);}
+  .layer-row.active .sw .k{transform:translateX(13px);background:var(--teal);}
+  .layer-divider{height:1px;background:rgba(255,255,255,0.08);margin:14px 0;}
+  .layer-hint{font-size:11px;color:rgba(255,255,255,0.35);line-height:1.6;margin-top:10px;}
+
+  /* ---------- center globe ---------- */
+  .globe-wrap{position:relative;background:radial-gradient(circle at 50% 35%, #0f3350 0%, #061a2c 75%);}
+  #globeCanvas{width:100%;height:100%;display:block;cursor:grab;}
+  #globeCanvas.dragging{cursor:grabbing;}
+  .globe-legend{
+    position:absolute;bottom:16px;left:16px;
+    background:rgba(10,35,56,0.85);border:1px solid rgba(255,255,255,0.1);border-radius:10px;
+    padding:12px 14px;backdrop-filter:blur(8px);min-width:190px;
+  }
+  .globe-legend .lt{font-size:11px;color:rgba(255,255,255,0.55);margin-bottom:8px;}
+  .legend-bar{height:8px;border-radius:5px;margin-bottom:5px;background:linear-gradient(90deg,var(--g0),var(--g1),var(--g2),var(--g3),var(--g4));}
+  .legend-scale{display:flex;justify-content:space-between;font-family:var(--mono);font-size:10px;color:rgba(255,255,255,0.5);}
+  .globe-hint{
+    position:absolute;top:16px;left:16px;
+    font-size:11px;color:rgba(255,255,255,0.4);display:flex;flex-direction:column;gap:4px;
+  }
+  .no-layer-badge{
+    position:absolute;top:16px;right:16px;
+    font-family:var(--mono);font-size:10.5px;color:rgba(255,255,255,0.55);
+    background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);
+    padding:6px 12px;border-radius:999px;
+  }
+
+  /* ---------- right info panel ---------- */
+  .info-station{margin-bottom:18px;}
+  .info-station .sid{font-family:var(--head);font-size:17px;color:#fff;font-weight:700;}
+  .info-station .sregion{font-size:11.5px;color:rgba(255,255,255,0.45);margin-top:2px;}
+  .info-row{
+    display:flex;justify-content:space-between;align-items:baseline;
+    padding:9px 0;border-bottom:1px dashed rgba(255,255,255,0.08);
+  }
+  .info-row .k{font-size:12px;color:rgba(255,255,255,0.55);}
+  .info-row .v{font-family:var(--mono);font-size:13px;color:#fff;}
+  .info-row .v.warm{color:#f5a623;}
+  .info-row .v.good{color:var(--teal);}
+  .info-block-title{
+    font-size:10.5px;letter-spacing:.8px;text-transform:uppercase;color:rgba(255,255,255,0.35);
+    margin:16px 0 6px;font-weight:600;
+  }
+  .info-empty{font-size:12.5px;color:rgba(255,255,255,0.4);line-height:1.7;}
+  .info-cta{
+    display:block;text-align:center;margin-top:18px;
+    background:rgba(23,201,196,0.14);border:1px solid rgba(23,201,196,0.35);
+    color:var(--teal);font-size:12.5px;font-weight:600;padding:10px;border-radius:8px;
+  }
+  .info-cta:hover{background:rgba(23,201,196,0.22);}
+
+  /* ---------- bottom slider bar ---------- */
+  .dash-bottom{
+    flex-shrink:0;background:#0a2338;border-top:1px solid rgba(255,255,255,0.08);
+    display:grid;grid-template-columns:1fr 1fr;gap:0;
+  }
+  .slider-block{padding:14px 22px;display:flex;flex-direction:column;gap:8px;}
+  .slider-block:first-child{border-right:1px solid rgba(255,255,255,0.08);}
+  .slider-head{display:flex;justify-content:space-between;align-items:center;}
+  .slider-head .k{font-size:11.5px;color:rgba(255,255,255,0.5);display:flex;align-items:center;gap:7px;}
+  .slider-head .v{font-family:var(--mono);font-size:13px;color:var(--teal);}
+  .slider-row{display:flex;align-items:center;gap:10px;}
+  #playBtn{
+    width:28px;height:28px;border-radius:7px;background:rgba(255,255,255,0.06);
+    border:1px solid rgba(255,255,255,0.12);color:#fff;display:flex;align-items:center;justify-content:center;
+    cursor:pointer;flex-shrink:0;
+  }
+  input[type=range]{flex:1;accent-color:var(--teal);}
+
+  @media (max-width:980px){
+    .dash-main{grid-template-columns:180px 1fr 220px;}
+  }
+</style>
+</head>
+<body>
+<div class="dash">
+
+  <div class="dash-top">
+    <div class="dash-title">
+      <span class="mark"><svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M2 15c2 2 4 2 6 0s4-2 6 0 4 2 6 0 4-2 6 0" stroke="#061a2c" stroke-width="2.4" stroke-linecap="round"/></svg></span>
+      <h1>AquaCore Dashboard</h1>
+      <span>3D Ocean Globe · synthetic demo data</span>
+    </div>
+    <div class="dash-nav">
+      <span id="liveStatus" class="live-pill idle" title="Click to fetch live ocean data">
+        <span class="live-dot"></span><span id="liveStatusText">Fetch Live Data</span>
+      </span>
+      <a href="index.html">← Home</a>
+      <a href="comparison.html" class="primary" id="toComparison">View Comparison →</a>
+    </div>
+  </div>
+
+  <div class="dash-main">
+
+    <!-- LEFT: Layers -->
+    <div class="panel-col left">
+      <div class="panel-title">Layers</div>
+      <div id="variableLayers"></div>
+      <div class="layer-divider"></div>
+      <div class="layer-row" id="rowSeaLevel">
+        <span class="lbl"><span class="dot" style="background:#8be8e0;"></span>Sea Level</span>
+        <span class="sw"><span class="k"></span></span>
+      </div>
+      <div class="layer-row active" id="rowObs">
+        <span class="lbl"><span class="dot" style="background:#f5a623;"></span>Observations</span>
+        <span class="sw"><span class="k"></span></span>
+      </div>
+      <div class="layer-divider"></div>
+      <p class="layer-hint">Pick one field to color the globe. Sea Level adds a gentle surface ripple; Observations shows ARGO-style stations.</p>
+    </div>
+
+    <!-- CENTER: Globe -->
+    <div class="globe-wrap">
+      <canvas id="globeCanvas"></canvas>
+      <div class="globe-hint">
+        <span>🖱 Drag to rotate</span>
+        <span>⚲ Scroll to zoom</span>
+      </div>
+      <div class="no-layer-badge" id="activeLayerBadge">Temperature</div>
+      <div class="globe-legend" id="legendBox">
+        <div class="lt" id="legendTitle">Temperature — 0 m</div>
+        <div class="legend-bar" id="legendBar"></div>
+        <div class="legend-scale"><span id="legendMin">–</span><span id="legendMax">–</span></div>
+        <div style="font-size:9.5px;color:rgba(255,255,255,0.3);margin-top:8px;">Live data: Open-Meteo.com (DWD/ECMWF/MeteoFrance)</div>
+      </div>
+    </div>
+
+    <!-- RIGHT: Information -->
+    <div class="panel-col right">
+      <div class="panel-title">Information</div>
+      <div id="infoContent"></div>
+    </div>
+
+  </div>
+
+  <div class="dash-bottom">
+    <div class="slider-block">
+      <div class="slider-head">
+        <span class="k">⏱ Time</span>
+        <span class="v" id="timeVal">Day 1 / 8</span>
+      </div>
+      <div class="slider-row">
+        <button id="playBtn">
+          <svg id="playIcon" width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><polygon points="5,3 21,12 5,21"/></svg>
+          <svg id="pauseIcon" width="11" height="11" viewBox="0 0 24 24" fill="currentColor" style="display:none;"><rect x="5" y="3" width="5" height="18"/><rect x="14" y="3" width="5" height="18"/></svg>
+        </button>
+        <input type="range" id="timeSlider" min="0" max="7" step="1" value="0">
+      </div>
+    </div>
+    <div class="slider-block">
+      <div class="slider-head">
+        <span class="k">▤ Depth</span>
+        <span class="v" id="depthVal">0 m</span>
+      </div>
+      <div class="slider-row">
+        <input type="range" id="depthSlider" min="0" max="5" step="1" value="0" style="margin-left:38px;">
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script src="data.js"></script>
+<script>
+(function(){
+
+/* ============================================================
+   STATE
+   ============================================================ */
+const state = {
+  variable: 'temperature',
+  depthIndex: 0,
+  time: 0,
+  playing: false,
+  seaLevel: false,
+  showObs: true,
+  selectedStation: STATIONS.find(s=>s.id==='ARGO-102') || STATIONS[0]
+};
+
+/* ============================================================
+   SCENE SETUP
+   ============================================================ */
+const R = 2.6;
+function lonLatToVec3(lon, lat, r){
+  const phi = (90-lat)*Math.PI/180;
+  const theta = (lon+180)*Math.PI/180;
+  return new THREE.Vector3(
+    -r*Math.sin(phi)*Math.cos(theta),
+    r*Math.cos(phi),
+    r*Math.sin(phi)*Math.sin(theta)
+  );
+}
+
+const canvas = document.getElementById('globeCanvas');
+const wrapEl = document.querySelector('.globe-wrap');
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 100);
+const renderer = new THREE.WebGLRenderer({ canvas, antialias:true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio,2));
+
+function resize(){
+  const w = wrapEl.clientWidth, h = wrapEl.clientHeight;
+  renderer.setSize(w,h);
+  camera.aspect = w/h;
+  camera.updateProjectionMatrix();
+}
+
+scene.add(new THREE.AmbientLight(0x9fc4d6, 0.65));
+const sun = new THREE.DirectionalLight(0xfff2d8, 1.35);
+sun.position.set(6,5,8);
+scene.add(sun);
+
+renderer.outputEncoding = THREE.sRGBEncoding;
+
+// starry backdrop (cheap points)
+const starGeo = new THREE.BufferGeometry();
+const starPos = new Float32Array(600*3);
+for (let i=0;i<600;i++){
+  const r = 40+Math.random()*20;
+  const a = Math.random()*Math.PI*2, b = Math.acos(2*Math.random()-1);
+  starPos[i*3]=r*Math.sin(b)*Math.cos(a);
+  starPos[i*3+1]=r*Math.sin(b)*Math.sin(a);
+  starPos[i*3+2]=r*Math.cos(b);
+}
+starGeo.setAttribute('position', new THREE.BufferAttribute(starPos,3));
+scene.add(new THREE.Points(starGeo, new THREE.PointsMaterial({ color:0xbfe6f2, size:0.06, transparent:true, opacity:0.5 })));
+
+/* ---- base globe: real NASA-derived Earth textures (three.js official example assets) ---- */
+const TEX_BASE = 'https://raw.githubusercontent.com/mrdoob/three.js/dev/examples/textures/planets/';
+const texManager = new THREE.LoadingManager();
+texManager.onError = (url) => {
+  console.warn('AquaCore: texture failed to load, falling back to flat ocean color:', url);
+  globeMat.map = null; globeMat.specularMap = null; globeMat.normalMap = null;
+  globeMat.color = new THREE.Color(0x0a3350);
+  globeMat.needsUpdate = true;
+  cloudMesh.visible = false;
+};
+const texLoader = new THREE.TextureLoader(texManager);
+texLoader.crossOrigin = 'anonymous';
+function loadTex(name, srgb){
+  const t = texLoader.load(TEX_BASE + name);
+  if (srgb) t.encoding = THREE.sRGBEncoding;
+  return t;
+}
+const dayTex   = loadTex('earth_atmos_2048.jpg', true);
+const oceanMaskTex = loadTex('earth_specular_2048.jpg', false); // bright = ocean, dark = land
+const normalTex = loadTex('earth_normal_2048.jpg', false);
+const cloudsTex = loadTex('earth_clouds_1024.png', true);
+
+const globeGeo = new THREE.SphereGeometry(R, 96, 64);
+const globeMat = new THREE.MeshPhongMaterial({
+  map: dayTex,
+  specularMap: oceanMaskTex,
+  specular: new THREE.Color(0x4d6b7a),
+  shininess: 22,
+  normalMap: normalTex,
+  normalScale: new THREE.Vector2(0.55, 0.55)
+});
+const globeMesh = new THREE.Mesh(globeGeo, globeMat);
+scene.add(globeMesh);
+
+// cloud layer, slightly larger radius, rotates independently for parallax
+const cloudGeo = new THREE.SphereGeometry(R*1.012, 72, 48);
+const cloudMat = new THREE.MeshLambertMaterial({ map: cloudsTex, transparent:true, opacity:0.55, depthWrite:false });
+const cloudMesh = new THREE.Mesh(cloudGeo, cloudMat);
+scene.add(cloudMesh);
+
+// Fresnel-based atmosphere rim glow (view-dependent, looks like a real limb glow)
+const atmosphereGeo = new THREE.SphereGeometry(R*1.06, 64, 40);
+const atmosphereMat = new THREE.ShaderMaterial({
+  side: THREE.BackSide,
+  transparent: true,
+  blending: THREE.AdditiveBlending,
+  depthWrite: false,
+  uniforms: { uColor: { value: new THREE.Color(0x4fd6e8) } },
+  vertexShader: `
+    varying vec3 vNormal;
+    void main(){
+      vNormal = normalize(normalMatrix * normal);
+      gl_Position = projectionMatrix*modelViewMatrix*vec4(position,1.0);
+    }
+  `,
+  fragmentShader: `
+    varying vec3 vNormal;
+    uniform vec3 uColor;
+    void main(){
+      float rim = pow(0.68 - dot(vNormal, vec3(0.0,0.0,1.0)), 2.6);
+      gl_FragColor = vec4(uColor, clamp(rim,0.0,1.0)*0.9);
+    }
+  `
+});
+scene.add(new THREE.Mesh(atmosphereGeo, atmosphereMat));
+
+/* ---- data overlay sphere (custom grid, shader-driven, masked to oceans only) ---- */
+const DNX=96, DNZ=56;
+function buildDataGeometry(){
+  const positions = new Float32Array(DNX*DNZ*3);
+  const normals = new Float32Array(DNX*DNZ*3);
+  const colors = new Float32Array(DNX*DNZ*3);
+  const uvs = new Float32Array(DNX*DNZ*2);
+  const lonlat = new Float32Array(DNX*DNZ*2);
+  let p=0, p2=0, p3=0;
+  for (let j=0;j<DNZ;j++){
+    for (let i=0;i<DNX;i++){
+      const lon = -180 + 360*i/(DNX-1);
+      const lat = -90 + 180*j/(DNZ-1);
+      const v = lonLatToVec3(lon,lat,1);
+      positions[p]=v.x*R; positions[p+1]=v.y*R; positions[p+2]=v.z*R;
+      normals[p]=v.x; normals[p+1]=v.y; normals[p+2]=v.z;
+      uvs[p3]=i/(DNX-1); uvs[p3+1]=j/(DNZ-1); // matches THREE.SphereGeometry's own UV formula
+      lonlat[p2]=lon; lonlat[p2+1]=lat;
+      p+=3; p2+=2; p3+=2;
+    }
+  }
+  const indices=[];
+  for (let j=0;j<DNZ-1;j++){
+    for (let i=0;i<DNX-1;i++){
+      const a=j*DNX+i,b=j*DNX+i+1,c=(j+1)*DNX+i,d=(j+1)*DNX+i+1;
+      indices.push(a,c,b, b,c,d);
+    }
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(positions,3));
+  geo.setAttribute('normal', new THREE.BufferAttribute(normals,3));
+  geo.setAttribute('color', new THREE.BufferAttribute(colors,3));
+  geo.setAttribute('uv', new THREE.BufferAttribute(uvs,2));
+  geo.setIndex(indices);
+  return { geo, lonlat };
+}
+const { geo: dataGeo, lonlat: dataLonLat } = buildDataGeometry();
+const dataMat = new THREE.ShaderMaterial({
+  transparent:true,
+  uniforms:{
+    uTime:{value:0},
+    uWavesOn:{value:0},
+    uOpacity:{value:0.82},
+    uOceanMask:{value: oceanMaskTex}
+  },
+  vertexShader:`
+    attribute vec3 color;
+    uniform float uTime, uWavesOn;
+    varying vec3 vColor;
+    varying float vLight;
+    varying vec2 vUv;
+    void main(){
+      vColor = color;
+      vUv = uv;
+      float h = sin(position.x*3.0+uTime*1.4)*0.02 + sin(position.z*3.4-uTime*1.1)*0.02;
+      vec3 p = position + normal * (h*uWavesOn);
+      vLight = 0.7 + 0.3*max(dot(normalize(normal), normalize(vec3(0.4,0.5,0.7))), 0.0);
+      gl_Position = projectionMatrix*modelViewMatrix*vec4(p,1.0);
+    }
+  `,
+  fragmentShader:`
+    precision mediump float;
+    varying vec3 vColor; varying float vLight; varying vec2 vUv;
+    uniform float uOpacity;
+    uniform sampler2D uOceanMask;
+    void main(){
+      // earth_specular texture: bright = open ocean, dark = land.
+      // Use it to keep the data wash confined to water, like a real ocean-only layer.
+      float ocean = texture2D(uOceanMask, vUv).r;
+      float mask = smoothstep(0.15, 0.45, ocean);
+      gl_FragColor = vec4(vColor*vLight, uOpacity*mask);
+    }
+  `
+});
+const dataMesh = new THREE.Mesh(dataGeo, dataMat);
+dataMesh.scale.setScalar(1.006);
+scene.add(dataMesh);
+
+/* ---- current flow particles ---- */
+const N_FLOW = 140;
+const flow = [];
+for (let i=0;i<N_FLOW;i++){
+  flow.push({ lon:-180+Math.random()*360, lat:-80+Math.random()*160 });
+}
+const flowGeo = new THREE.BufferGeometry();
+const flowPos = new Float32Array(N_FLOW*3);
+flowGeo.setAttribute('position', new THREE.BufferAttribute(flowPos,3));
+const flowMat = new THREE.PointsMaterial({ color:0xfff3c4, size:0.045, transparent:true, opacity:0.9 });
+const flowPoints = new THREE.Points(flowGeo, flowMat);
+scene.add(flowPoints);
+
+function updateFlowParticles(dt){
+  if (state.variable !== 'currents'){ flowPoints.visible = false; return; }
+  flowPoints.visible = true;
+  const depth = DEPTHS[state.depthIndex];
+  for (let i=0;i<N_FLOW;i++){
+    const f = flow[i];
+    const ln = lonNorm(f.lon), la = latNorm(f.lat);
+    const u = -Math.sin(ln*2)*Math.cos(la*2 + state.time*0.2);
+    const v =  Math.cos(ln*2 + state.time*0.2)*Math.sin(la*2);
+    f.lon += u*dt*10;
+    f.lat = Math.max(-85, Math.min(85, f.lat + v*dt*6));
+    if (f.lon>180) f.lon-=360; if (f.lon<-180) f.lon+=360;
+    const p = lonLatToVec3(f.lon,f.lat,R*1.012);
+    flowPos[i*3]=p.x; flowPos[i*3+1]=p.y; flowPos[i*3+2]=p.z;
+  }
+  flowGeo.attributes.position.needsUpdate = true;
+}
+
+/* ---- station markers ---- */
+function makeGlowTexture(){
+  const c=document.createElement('canvas'); c.width=c.height=64;
+  const ctx=c.getContext('2d');
+  const g=ctx.createRadialGradient(32,32,0,32,32,32);
+  g.addColorStop(0,'rgba(255,255,255,0.95)'); g.addColorStop(0.5,'rgba(255,255,255,0.3)'); g.addColorStop(1,'rgba(255,255,255,0)');
+  ctx.fillStyle=g; ctx.fillRect(0,0,64,64);
+  return new THREE.CanvasTexture(c);
+}
+const glowTex = makeGlowTexture();
+const stationGroup = new THREE.Group();
+scene.add(stationGroup);
+const stationSphereGeo = new THREE.SphereGeometry(0.045, 10, 8);
+STATIONS.forEach(st => {
+  const pos = lonLatToVec3(st.lon, st.lat, R*1.02);
+  const mat = new THREE.MeshBasicMaterial({ color:0xf5a623 });
+  const mesh = new THREE.Mesh(stationSphereGeo, mat);
+  mesh.position.copy(pos);
+  mesh.userData = { station: st };
+  stationGroup.add(mesh);
+
+  const halo = new THREE.Sprite(new THREE.SpriteMaterial({ map:glowTex, color:0xf5a623, transparent:true, opacity:0.55, depthWrite:false, blending:THREE.AdditiveBlending }));
+  halo.scale.set(0.24,0.24,0.24);
+  halo.position.copy(pos);
+  stationGroup.add(halo);
+
+  st._mesh = mesh; st._halo = halo;
+});
+
+/* ============================================================
+   UPDATE FUNCTIONS
+   ============================================================ */
+function updateDataColors(){
+  const v = VARIABLES[state.variable];
+  const depth = DEPTHS[state.depthIndex];
+  const colorAttr = dataGeo.attributes.color;
+  for (let idx=0; idx<DNX*DNZ; idx++){
+    const lon = dataLonLat[idx*2], lat = dataLonLat[idx*2+1];
+    const val = v.fn(lon, lat, depth, state.time);
+    const [r,g,b] = colorForValue(state.variable, val);
+    colorAttr.array[idx*3]=r; colorAttr.array[idx*3+1]=g; colorAttr.array[idx*3+2]=b;
+  }
+  colorAttr.needsUpdate = true;
+  dataMat.uniforms.uWavesOn.value = (state.variable==='waves') ? 1 : 0;
+}
+
+function updateLegend(){
+  const v = VARIABLES[state.variable];
+  document.getElementById('legendTitle').textContent = v.label + ' — ' + DEPTHS[state.depthIndex] + ' m';
+  document.getElementById('legendMin').textContent = v.range.min.toFixed(1)+' '+v.unit;
+  document.getElementById('legendMax').textContent = v.range.max.toFixed(1)+' '+v.unit;
+  const bar = document.getElementById('legendBar');
+  v.stops.forEach((c,i)=>bar.style.setProperty('--g'+i,c));
+  document.getElementById('activeLayerBadge').textContent = v.label;
+}
+
+function updateStationVisuals(){
+  stationGroup.visible = state.showObs;
+  STATIONS.forEach(st => {
+    const { observed } = stationValue(st, state.variable, state.time);
+    const [r,g,b] = colorForValue(state.variable, observed);
+    st._mesh.material.color.setRGB(r,g,b);
+    st._halo.material.color.setRGB(r,g,b);
+    const isSel = state.selectedStation && st.id===state.selectedStation.id;
+    st._mesh.scale.setScalar(isSel ? 1.8 : 1);
+    st._halo.scale.setScalar(isSel ? 0.34 : 0.22);
+  });
+}
+
+function fmtVal(v,unit){ return v.toFixed(2)+' '+unit; }
+
+function updateInfoPanel(){
+  const box = document.getElementById('infoContent');
+  const st = state.selectedStation;
+  if (!st){
+    const fs = fleetStats(state.variable, state.time, state.depthIndex);
+    box.innerHTML = `<p class="info-empty">Hover or click a station marker on the globe to see its data here.</p>
+      <div class="info-block-title">Fleet Overview — ${DEPTHS[state.depthIndex]}m</div>
+      <div class="info-row"><span class="k">Stations at depth</span><span class="v">${fs.count}</span></div>
+      <div class="info-row"><span class="k">RMSE</span><span class="v warm">${fs.rmse.toFixed(3)}</span></div>
+      <div class="info-row"><span class="k">Mean bias</span><span class="v good">${fs.bias>=0?'+':''}${fs.bias.toFixed(3)}</span></div>`;
+    return;
+  }
+  const v = VARIABLES[state.variable];
+  const temp = stationValue(st,'temperature',state.time);
+  const sal = stationValue(st,'salinity',state.time);
+  const active = stationValue(st, state.variable, state.time);
+  const liveTag = t => `<span class="live-tag ${t?'on':'off'}">${t?'LIVE':'SIM'}</span>`;
+  box.innerHTML = `
+    <div class="info-station">
+      <div class="sid">${st.id}</div>
+      <div class="sregion">${st.name} · ${st.lat.toFixed(1)}°, ${st.lon.toFixed(1)}° · ${st.depth} m</div>
+    </div>
+    <div class="info-block-title">Station Data</div>
+    <div class="info-row"><span class="k">Temperature ${liveTag(temp.isLive)}</span><span class="v">${temp.observed.toFixed(1)}°C</span></div>
+    <div class="info-row"><span class="k">Salinity ${liveTag(false)}</span><span class="v">${sal.observed.toFixed(1)} PSU</span></div>
+    <div class="info-block-title">${v.label} Comparison</div>
+    <div class="info-row"><span class="k">Model Value</span><span class="v">${fmtVal(active.model, v.unit)}</span></div>
+    <div class="info-row"><span class="k">Observation ${liveTag(active.isLive)}</span><span class="v">${fmtVal(active.observed, v.unit)}</span></div>
+    <div class="info-row"><span class="k">Difference</span><span class="v ${active.difference>=0?'warm':'good'}">${active.difference>=0?'+':''}${active.difference.toFixed(2)} ${v.unit}</span></div>
+    <a class="info-cta" href="comparison.html?station=${st.id}">Full comparison →</a>
+  `;
+}
+
+function updateAll(){
+  updateDataColors();
+  updateLegend();
+  updateStationVisuals();
+  updateInfoPanel();
+  document.getElementById('timeVal').textContent = 'Day ' + (state.time+1) + ' / ' + N_DAYS;
+  document.getElementById('depthVal').textContent = DEPTHS[state.depthIndex] + ' m';
+  document.getElementById('toComparison').href = 'comparison.html' + (state.selectedStation ? ('?station='+state.selectedStation.id) : '');
+}
+
+/* ============================================================
+   UI WIRING
+   ============================================================ */
+const variableLayers = document.getElementById('variableLayers');
+const dotColors = { temperature:'#dc2626', salinity:'#4338ca', currents:'#14b8a6', waves:'#17c9c4' };
+Object.keys(VARIABLES).forEach(key=>{
+  const row = document.createElement('div');
+  row.className = 'layer-row' + (key===state.variable ? ' active' : '');
+  row.innerHTML = `<span class="lbl"><span class="dot" style="background:${dotColors[key]};"></span>${VARIABLES[key].label}</span><span class="sw"><span class="k"></span></span>`;
+  row.addEventListener('click', ()=>{
+    state.variable = key;
+    [...variableLayers.children].forEach(r=>r.classList.remove('active'));
+    row.classList.add('active');
+    updateAll();
+  });
+  variableLayers.appendChild(row);
+});
+
+document.getElementById('rowSeaLevel').addEventListener('click', function(){
+  state.seaLevel = !state.seaLevel;
+  this.classList.toggle('active', state.seaLevel);
+  globeMesh.scale.setScalar(state.seaLevel ? 1.012 : 1);
+});
+document.getElementById('rowObs').addEventListener('click', function(){
+  state.showObs = !state.showObs;
+  this.classList.toggle('active', state.showObs);
+  updateStationVisuals();
+});
+
+const timeSlider = document.getElementById('timeSlider');
+timeSlider.addEventListener('input', ()=>{ state.time=parseInt(timeSlider.value,10); updateAll(); });
+const depthSlider = document.getElementById('depthSlider');
+depthSlider.addEventListener('input', ()=>{ state.depthIndex=parseInt(depthSlider.value,10); updateAll(); });
+
+let playTimer=null;
+const playBtn=document.getElementById('playBtn'), playIcon=document.getElementById('playIcon'), pauseIcon=document.getElementById('pauseIcon');
+playBtn.addEventListener('click', ()=>{
+  state.playing=!state.playing;
+  playIcon.style.display = state.playing?'none':'block';
+  pauseIcon.style.display = state.playing?'block':'none';
+  if (state.playing){
+    playTimer = setInterval(()=>{ state.time=(state.time+1)%N_DAYS; timeSlider.value=state.time; updateAll(); }, 1000);
+  } else clearInterval(playTimer);
+});
+
+/* ============================================================
+   CAMERA CONTROLS + HOVER
+   ============================================================ */
+let radius=7.4, azimuth=0.6, polar=1.15;
+const target=new THREE.Vector3(0,0,0);
+function updateCamera(){
+  camera.position.set(
+    target.x+radius*Math.sin(polar)*Math.sin(azimuth),
+    target.y+radius*Math.cos(polar),
+    target.z+radius*Math.sin(polar)*Math.cos(azimuth)
+  );
+  camera.lookAt(target);
+}
+
+let dragging=false, lastX=0, lastY=0, autoRotate=true;
+canvas.addEventListener('pointerdown', e=>{ dragging=true; autoRotate=false; lastX=e.clientX; lastY=e.clientY; canvas.setPointerCapture(e.pointerId); canvas.classList.add('dragging'); });
+canvas.addEventListener('pointerup', ()=>{ dragging=false; canvas.classList.remove('dragging'); });
+canvas.addEventListener('pointermove', e=>{
+  if (dragging){
+    const dx=e.clientX-lastX, dy=e.clientY-lastY; lastX=e.clientX; lastY=e.clientY;
+    azimuth -= dx*0.006;
+    polar = Math.max(0.35, Math.min(2.6, polar - dy*0.006));
+  } else {
+    handleHover(e);
+  }
+});
+canvas.addEventListener('wheel', e=>{
+  e.preventDefault();
+  radius = Math.max(3.6, Math.min(16, radius*(1+e.deltaY*0.0012)));
+}, { passive:false });
+
+const raycaster = new THREE.Raycaster();
+raycaster.params.Points.threshold = 0.08;
+const mouse = new THREE.Vector2();
+function handleHover(e){
+  const rect = canvas.getBoundingClientRect();
+  mouse.x = ((e.clientX-rect.left)/rect.width)*2-1;
+  mouse.y = -((e.clientY-rect.top)/rect.height)*2+1;
+  raycaster.setFromCamera(mouse, camera);
+  const meshes = STATIONS.map(s=>s._mesh);
+  const hits = raycaster.intersectObjects(meshes);
+  if (hits.length){
+    state.selectedStation = hits[0].object.userData.station;
+    updateStationVisuals();
+    updateInfoPanel();
+    document.getElementById('toComparison').href = 'comparison.html?station='+state.selectedStation.id;
+  }
+}
+
+/* ============================================================
+   RESIZE + RENDER LOOP
+   ============================================================ */
+window.addEventListener('resize', resize);
+resize();
+updateCamera();
+updateAll();
+
+const clock = new THREE.Clock();
+function animate(){
+  requestAnimationFrame(animate);
+  const dt = clock.getDelta();
+  const elapsed = clock.getElapsedTime();
+  dataMat.uniforms.uTime.value = elapsed;
+  cloudMesh.rotation.y += dt*0.012; // clouds drift independently of the globe for parallax
+  if (autoRotate && !dragging) azimuth += dt*0.06;
+  updateCamera();
+  updateFlowParticles(dt);
+  renderer.render(scene, camera);
+}
+animate();
+
+/* ============================================================
+   LIVE DATA (Open-Meteo Marine API) — fetch, wire, refresh
+   ============================================================ */
+const livePill = document.getElementById('liveStatus');
+const livePillText = document.getElementById('liveStatusText');
+
+function renderLiveStatus(){
+  livePill.className = 'live-pill ' + LIVE.status;
+  if (LIVE.status === 'idle') livePillText.textContent = 'Fetch Live Data';
+  else if (LIVE.status === 'loading') livePillText.textContent = 'Fetching live data…';
+  else if (LIVE.status === 'live'){
+    const secs = Math.round((Date.now()-LIVE.lastFetched)/1000);
+    livePillText.textContent = `Live · ${LIVE.matched}/${STATIONS.length} stations · ${secs}s ago`;
+  } else if (LIVE.status === 'error'){
+    livePillText.textContent = 'Live data unavailable — tap to retry';
+  }
+}
+
+async function runFetch(){
+  renderLiveStatus();
+  try{
+    await fetchLiveData();
+  } catch(e){
+    console.warn('AquaCore: live data fetch failed, using simulated observations.', e);
+  }
+  renderLiveStatus();
+  updateAll(); // refresh colors/markers/info panel with whatever data is now available
+}
+
+livePill.addEventListener('click', () => { if (LIVE.status !== 'loading') runFetch(); });
+setInterval(() => { if (LIVE.status==='live') renderLiveStatus(); }, 5000);
+runFetch(); // attempt live data automatically on load; falls back to simulated silently
+
+})();
+</script>
+</body>
+</html>
