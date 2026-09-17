@@ -311,45 +311,77 @@ for (let i=0;i<600;i++){
 starGeo.setAttribute('position', new THREE.BufferAttribute(starPos,3));
 scene.add(new THREE.Points(starGeo, new THREE.PointsMaterial({ color:0xbfe6f2, size:0.06, transparent:true, opacity:0.5 })));
 
-/* ---- base globe: real NASA-derived Earth textures (three.js official example assets) ---- */
-const TEX_BASE = 'https://raw.githubusercontent.com/mrdoob/three.js/dev/examples/textures/planets/';
-const texManager = new THREE.LoadingManager();
-texManager.onError = (url) => {
-  console.warn('AquaCore: texture failed to load, falling back to flat ocean color:', url);
-  globeMat.map = null; globeMat.specularMap = null; globeMat.normalMap = null;
-  globeMat.color = new THREE.Color(0x0a3350);
-  globeMat.needsUpdate = true;
-  cloudMesh.visible = false;
-};
-const texLoader = new THREE.TextureLoader(texManager);
+/* ---- base globe: real NASA-derived Earth textures (three.js official example assets) ----
+   Loaded defensively: the globe starts as a solid lit ocean-blue sphere (always visible,
+   never black) and only swaps in real imagery once each texture has *fully decoded* —
+   sampling a still-loading WebGL texture returns solid black, which is what caused the
+   invisible-globe bug. A jsdelivr mirror is tried if the primary GitHub source fails. */
+const TEX_SOURCES = [
+  'https://raw.githubusercontent.com/mrdoob/three.js/dev/examples/textures/planets/',
+  'https://cdn.jsdelivr.net/gh/mrdoob/three.js@dev/examples/textures/planets/'
+];
+const texLoader = new THREE.TextureLoader();
 texLoader.crossOrigin = 'anonymous';
-function loadTex(name, srgb){
-  const t = texLoader.load(TEX_BASE + name);
-  if (srgb) t.encoding = THREE.sRGBEncoding;
-  return t;
+
+function loadTextureWithFallback(name, onReady){
+  let attempt = 0;
+  (function tryNext(){
+    if (attempt >= TEX_SOURCES.length){
+      console.warn('AquaCore: could not load texture from any source:', name);
+      return;
+    }
+    const url = TEX_SOURCES[attempt++] + name;
+    texLoader.load(
+      url,
+      (tex) => { onReady(tex); },
+      undefined,
+      () => { console.warn('AquaCore: texture source failed, trying next:', url); tryNext(); }
+    );
+  })();
 }
-const dayTex   = loadTex('earth_atmos_2048.jpg', true);
-const oceanMaskTex = loadTex('earth_specular_2048.jpg', false); // bright = ocean, dark = land
-const normalTex = loadTex('earth_normal_2048.jpg', false);
-const cloudsTex = loadTex('earth_clouds_1024.png', true);
 
 const globeGeo = new THREE.SphereGeometry(R, 96, 64);
 const globeMat = new THREE.MeshPhongMaterial({
-  map: dayTex,
-  specularMap: oceanMaskTex,
+  color: 0x1c5a78,          // visible ocean-blue immediately, replaced once map loads
   specular: new THREE.Color(0x4d6b7a),
-  shininess: 22,
-  normalMap: normalTex,
-  normalScale: new THREE.Vector2(0.55, 0.55)
+  shininess: 22
 });
 const globeMesh = new THREE.Mesh(globeGeo, globeMat);
 scene.add(globeMesh);
 
-// cloud layer, slightly larger radius, rotates independently for parallax
+// cloud layer, slightly larger radius, rotates independently for parallax — hidden until loaded
 const cloudGeo = new THREE.SphereGeometry(R*1.012, 72, 48);
-const cloudMat = new THREE.MeshLambertMaterial({ map: cloudsTex, transparent:true, opacity:0.55, depthWrite:false });
+const cloudMat = new THREE.MeshLambertMaterial({ transparent:true, opacity:0.55, depthWrite:false });
 const cloudMesh = new THREE.Mesh(cloudGeo, cloudMat);
+cloudMesh.visible = false;
 scene.add(cloudMesh);
+
+let oceanMaskTex = null; // used by the data-overlay shader below once available
+
+loadTextureWithFallback('earth_atmos_2048.jpg', (tex) => {
+  tex.encoding = THREE.sRGBEncoding;
+  globeMat.map = tex;
+  globeMat.color.set(0xffffff); // let the real texture carry color now
+  globeMat.needsUpdate = true;
+});
+loadTextureWithFallback('earth_specular_2048.jpg', (tex) => {
+  globeMat.specularMap = tex;
+  globeMat.needsUpdate = true;
+  oceanMaskTex = tex;
+  dataMat.uniforms.uOceanMask.value = tex;
+  dataMat.uniforms.uMaskReady.value = 1;
+});
+loadTextureWithFallback('earth_normal_2048.jpg', (tex) => {
+  globeMat.normalMap = tex;
+  globeMat.normalScale.set(0.55, 0.55);
+  globeMat.needsUpdate = true;
+});
+loadTextureWithFallback('earth_clouds_1024.png', (tex) => {
+  tex.encoding = THREE.sRGBEncoding;
+  cloudMat.map = tex;
+  cloudMat.needsUpdate = true;
+  cloudMesh.visible = true;
+});
 
 // Fresnel-based atmosphere rim glow (view-dependent, looks like a real limb glow)
 const atmosphereGeo = new THREE.SphereGeometry(R*1.06, 64, 40);
@@ -414,13 +446,16 @@ function buildDataGeometry(){
   return { geo, lonlat };
 }
 const { geo: dataGeo, lonlat: dataLonLat } = buildDataGeometry();
+const placeholderMaskTex = new THREE.DataTexture(new Uint8Array([255,255,255,255]), 1, 1, THREE.RGBAFormat);
+placeholderMaskTex.needsUpdate = true;
 const dataMat = new THREE.ShaderMaterial({
   transparent:true,
   uniforms:{
     uTime:{value:0},
     uWavesOn:{value:0},
     uOpacity:{value:0.82},
-    uOceanMask:{value: oceanMaskTex}
+    uOceanMask:{value: placeholderMaskTex}, // swapped for the real ocean mask once it loads
+    uMaskReady:{value:0}                    // 0 = show data everywhere (safe default), 1 = mask to ocean only
   },
   vertexShader:`
     attribute vec3 color;
@@ -440,13 +475,14 @@ const dataMat = new THREE.ShaderMaterial({
   fragmentShader:`
     precision mediump float;
     varying vec3 vColor; varying float vLight; varying vec2 vUv;
-    uniform float uOpacity;
+    uniform float uOpacity, uMaskReady;
     uniform sampler2D uOceanMask;
     void main(){
       // earth_specular texture: bright = open ocean, dark = land.
       // Use it to keep the data wash confined to water, like a real ocean-only layer.
+      // Until that texture is confirmed loaded, uMaskReady stays 0 and data shows everywhere.
       float ocean = texture2D(uOceanMask, vUv).r;
-      float mask = smoothstep(0.15, 0.45, ocean);
+      float mask = mix(1.0, smoothstep(0.15, 0.45, ocean), uMaskReady);
       gl_FragColor = vec4(vColor*vLight, uOpacity*mask);
     }
   `

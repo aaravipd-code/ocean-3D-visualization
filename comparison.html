@@ -58,6 +58,30 @@
   .content{padding:56px 0 80px;}
 
   .stat-cards{display:grid;grid-template-columns:repeat(3,1fr);gap:20px;margin-bottom:36px;}
+
+  .platform-card{
+    background:#fff;border:1px solid var(--line);border-radius:14px;
+    padding:26px 30px;margin-bottom:28px;
+  }
+  .platform-card .ptitle{
+    display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap;
+  }
+  .platform-card .ptitle h3{font-size:17px;margin:0;}
+  .platform-card .badge{
+    font-family:var(--mono);font-size:10.5px;font-weight:700;padding:3px 9px;border-radius:5px;
+    background:var(--teal-glow);color:var(--teal-dark);
+  }
+  .platform-card .status-active{color:#16a34a;font-weight:600;}
+  .platform-card .status-inactive{color:#dc2626;font-weight:600;}
+  .platform-card p{
+    font-size:14px;line-height:1.75;color:var(--ink-dim);margin:0 0 14px;
+  }
+  .platform-card p:last-of-type{margin-bottom:0;}
+  .platform-card p b{color:var(--navy);font-weight:600;}
+  .platform-card .pcaveat{
+    font-size:12px;color:var(--ink-dim);opacity:0.75;font-style:italic;
+    margin-top:16px;padding-top:14px;border-top:1px dashed var(--line);
+  }
   .stat-card{
     background:#fff;border:1px solid var(--line);border-radius:12px;padding:24px;
   }
@@ -161,6 +185,8 @@
 
 <div class="content">
   <div class="wrap">
+
+    <div class="platform-card" id="platformCard"></div>
 
     <div class="stat-cards">
       <div class="stat-card model">
@@ -312,9 +338,71 @@
     });
   }
 
+  function renderPlatformStrip(){
+    const pf = state.station.platform;
+    const st = state.station;
+    const statusClass = pf.status === 'Active' ? 'status-active' : 'status-inactive';
+    const kind = pf.isBGC ? 'BGC-Argo' : 'Core Argo';
+
+    // "What is it" — identity, in plain language.
+    const pWhat = `<b>${st.id}</b> is a <b>${kind}</b> profiling float — one of roughly 4,000 robotic
+      instruments drifting through the world's oceans as part of the international Argo program. Its
+      <b>WMO ID (${pf.wmoId})</b> is what makes it identifiable: a unique platform number that lets
+      anyone trace every profile this exact float has ever reported, the same way a serial number
+      would. This one sits in the <b>${st.name}</b>, at roughly ${st.lat.toFixed(1)}°, ${st.lon.toFixed(1)}°,
+      and its data is processed by the <b>${pf.dac}</b> — the regional data center responsible for
+      quality-checking and distributing everything it sends back.`;
+
+    // "How it works" — model, cycle, deployment, why that matters.
+    const pHow = `It's a <b>${pf.model}</b>-model float, deployed in <b>${pf.deployedYear}</b> and still
+      running the fleet's standard <b>${pf.cycleDays}-day "park-and-profile" cycle</b>: it sinks to a
+      parking depth, drifts with the current for that stretch, then rises to the surface recording a
+      fresh profile as it goes, before phoning the data home by satellite. It has completed roughly
+      <b>${pf.cyclesCompleted.toLocaleString()} cycles</b> so far — the more cycles behind a float, the
+      longer and more reliable its track record is for checking a model against, since each cycle is
+      one more independent real-world data point.`;
+
+    // "Why the sensors matter" — core vs BGC, in context of what this platform can and can't tell you.
+    const pSensors = pf.isBGC
+      ? `Because it's a BGC-Argo unit, it carries more than the standard sensor: alongside temperature
+         and salinity it also measures <b>dissolved oxygen, chlorophyll-a, backscatter, and pH</b>. That
+         broader payload is why a float like this one can speak to ecosystem and carbon-cycle questions —
+         things like oxygen minimum zones or phytoplankton blooms — that a temperature-only float simply
+         can't answer.`
+      : `It carries the standard Argo instrument, a <b>CTD (conductivity-temperature-depth) sensor</b>,
+         which is exactly what the temperature and salinity comparisons on this page are built from. It
+         doesn't carry the extra biogeochemical sensors some newer floats do, so it won't report things
+         like oxygen or chlorophyll — but for physical ocean state, it's the core of what makes the Argo
+         network useful.`;
+
+    // Status, in plain terms.
+    const pStatus = pf.status === 'Active'
+      ? `Right now this float is <b class="status-active">Active</b> — still surfacing on schedule and
+         reporting fresh profiles.`
+      : `Right now this float is <b class="status-inactive">Inactive</b> — it's stopped reporting, most
+         likely because its battery ran out or it was lost, which is a normal end-of-life outcome for an
+         autonomous instrument with no way to be recovered or recharged at sea. Its past profiles are
+         still valid data; there just won't be any new ones from it.`;
+
+    document.getElementById('platformCard').innerHTML = `
+      <div class="ptitle">
+        <h3>About This Platform</h3>
+        <span class="badge">WMO ${pf.wmoId}</span>
+      </div>
+      <p>${pWhat}</p>
+      <p>${pHow}</p>
+      <p>${pSensors}</p>
+      <p>${pStatus}</p>
+      <div class="pcaveat">These platform details are generated to be representative of a real Argo float
+        record — correct ID format, real model names, real regional data-center mapping — but they are
+        not a live lookup against the official WMO/Argo registry.</div>
+    `;
+  }
+
   function updateAll(){
     const v = VARIABLES[state.variable];
     const { model, observed, difference, isLive } = stationValue(state.station, state.variable, 0);
+    renderPlatformStrip();
     document.getElementById('cardModel').innerHTML = `${model.toFixed(1)}<span> ${v.unit}</span>`;
     document.getElementById('cardObs').innerHTML = `${observed.toFixed(1)}<span> ${v.unit}</span>`;
     document.getElementById('cardDiff').innerHTML = `${difference>=0?'+':''}${difference.toFixed(2)}<span> ${v.unit}</span>`;

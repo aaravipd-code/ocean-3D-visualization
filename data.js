@@ -78,6 +78,22 @@ const OCEAN_REGIONS = [
   { name:'South Atlantic',  lonRange:[-40,10],  latRange:[-40,-5] }
 ];
 
+// ---- Argo platform metadata pools (illustrative, not live WMO-registry data) ----
+// Real Argo floats carry a unique WMO platform number, a float model, an operating
+// Data Assembling Center (DAC), a deployment date, sensor payload, and a ~10-day
+// profiling cycle. We generate plausible-format values per region so each station
+// reads like a real float record; see the note in the dashboard UI for the caveat.
+const FLOAT_MODELS_CORE = ['APEX','SOLO-II','ARVOR','PROVOR'];
+const FLOAT_MODELS_BGC  = ['NAVIS BGC','ARVOR-C BGC','PROVOR-CTS5'];
+const REGION_DAC = {
+  'North Atlantic':      'Coriolis (France)',
+  'North Pacific':       'AOML (USA)',
+  'Equatorial Pacific':  'AOML (USA)',
+  'Indian Ocean':        'INCOIS (India)',
+  'Southern Ocean':      'CSIRO (Australia)',
+  'South Atlantic':      'Coriolis (France)'
+};
+
 const N_STATIONS = 18;
 const STATIONS = [];
 for (let i=0;i<N_STATIONS;i++){
@@ -88,12 +104,35 @@ for (let i=0;i<N_STATIONS;i++){
   if (lon > 180) lon -= 360;
   const lat = region.latRange[0] + rand()*(region.latRange[1]-region.latRange[0]);
   const depthIdx = Math.floor(rand()*DEPTHS.length);
+
+  const isBGC = rand() < 0.35; // roughly a third are biogeochemical floats, like the real fleet mix
+  const models = isBGC ? FLOAT_MODELS_BGC : FLOAT_MODELS_CORE;
+  const model = models[Math.floor(rand()*models.length)];
+  const deployedYear = 2018 + Math.floor(rand()*7); // 2018-2024
+  const cycleDays = 10; // standard Argo park-and-profile cycle
+  const daysSinceDeploy = (2026 - deployedYear) * 365;
+  const cyclesCompleted = Math.max(1, Math.floor(daysSinceDeploy / cycleDays * (0.85 + rand()*0.1)));
+  const sensors = isBGC
+    ? ['CTD (temperature/salinity)', 'Dissolved oxygen', 'Chlorophyll-a', 'Backscatter', 'pH']
+    : ['CTD (temperature/salinity)'];
+
   STATIONS.push({
     id: 'ARGO-' + (100+i),
     name: region.name,
     lon, lat,
     depthIdx,
     depth: DEPTHS[depthIdx],
+    platform: {
+      wmoId: '59' + (10000 + Math.floor(rand()*89999)).toString(),
+      model,
+      isBGC,
+      dac: REGION_DAC[region.name],
+      deployedYear,
+      cycleDays,
+      cyclesCompleted,
+      sensors,
+      status: rand() < 0.92 ? 'Active' : 'Inactive'
+    },
     bias: {
       temperature: (rand()-0.5)*1.0,
       salinity:    (rand()-0.5)*0.2,
